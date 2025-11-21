@@ -3,36 +3,29 @@ import { GoogleGenAI } from "@google/genai";
 import { GiftSuggestionResponse } from '../types';
 
 // Initialize the Gemini API client
-// IMPORTANT: The API key must be set in the environment variable API_KEY
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+// Imagen de respaldo elegante por si falla la generación de imagen (Fallback)
+const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1617038224531-ab627b5f0f64?q=80&w=1000&auto=format&fit=crop";
+
 export const getGiftSuggestion = async (description: string): Promise<GiftSuggestionResponse> => {
+  // 1. INTENTO PRINCIPAL: Generar Imagen con IA
   try {
-    // Prompt designed for gemini-2.5-flash-image to generate both visual and text
+    console.log("Intentando generar imagen con gemini-2.5-flash-image...");
+    
     const prompt = `
       Diseña una imagen fotorrealista de una joya exclusiva de alta gama (anillo, collar, pulsera, etc) para la marca "Forjado en Oro".
-      
       La joya debe estar diseñada específicamente basándose en esta personalidad/descripción del cliente: "${description}".
-      
-      Estilo visual:
-      - Fotografía de producto de lujo, macro, iluminación cinematográfica.
-      - Materiales: Oro (amarillo, blanco o rosa), piedras preciosas brillantes.
-      - Fondo: Elegante, oscuro o neutro de estudio para resaltar el brillo.
-      - La pieza debe evocar el slogan: "Brillar es para quienes no se rinden".
-
-      Además de la imagen, proporciona un breve texto explicando el nombre de la pieza y por qué encaja con la descripción.
+      Estilo visual: Fotografía de producto de lujo, macro, iluminación cinematográfica. Materiales: Oro, piedras preciosas.
+      Fondo: Elegante, oscuro o neutro.
+      Además de la imagen, proporciona un breve texto explicando el nombre de la pieza y por qué encaja.
     `;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [{ text: prompt }]
-      },
+      contents: { parts: [{ text: prompt }] },
       config: {
-        // Image generation configuration
-        imageConfig: {
-          aspectRatio: "1:1",
-        }
+        imageConfig: { aspectRatio: "1:1" }
       }
     });
 
@@ -42,30 +35,61 @@ export const getGiftSuggestion = async (description: string): Promise<GiftSugges
     if (response.candidates?.[0]?.content?.parts) {
       for (const part of response.candidates[0].content.parts) {
         if (part.inlineData) {
-          const base64EncodeString = part.inlineData.data;
-          imageUrl = `data:image/png;base64,${base64EncodeString}`;
+          imageUrl = `data:image/png;base64,${part.inlineData.data}`;
         } else if (part.text) {
           textContent += part.text;
         }
       }
     }
 
-    if (!imageUrl) {
-      throw new Error("No image generated");
-    }
+    if (!imageUrl) throw new Error("No image generated");
 
-    // Simple parsing to try to extract a title if possible, otherwise use generic
     const titleMatch = textContent.match(/Nombre:?\s*(.+?)(\n|$)/i) || textContent.split('\n')[0]; 
     const title = titleMatch ? (typeof titleMatch === 'string' ? titleMatch : titleMatch[1]) : "Diseño Exclusivo IA";
     
     return {
       imageUrl: imageUrl,
-      title: title.replace(/[*"]/g, '').trim(), // Clean up markdown
+      title: title.replace(/[*"]/g, '').trim(),
       description: textContent.replace(title, '').trim() || "Diseño único basado en tu descripción."
     };
 
-  } catch (error) {
-    console.error("Error getting gift suggestion:", error);
-    throw error;
+  } catch (imageError) {
+    // 2. PLAN B (FALLBACK): Si falla la imagen (ej. Error 429), usamos solo texto
+    console.warn("Falló la generación de imagen (posible cuota excedida). Cambiando a modo texto.", imageError);
+
+    try {
+      const textPrompt = `
+        Eres el diseñador experto de "Forjado en Oro".
+        El cliente quiere una joya basada en: "${description}".
+        La generación de imagen falló por alta demanda, pero necesito que describas la joya conceptualmente.
+        
+        Genera un JSON con este formato (sin markdown):
+        {
+          "title": "Nombre Creativo de la Joya",
+          "description": "Descripción seductora y breve de la joya (máx 40 palabras)."
+        }
+      `;
+
+      const textResponse = await ai.models.generateContent({
+        model: 'gemini-2.5-flash', // Modelo de texto mucho más rápido y estable
+        contents: textPrompt,
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+
+      const jsonText = textResponse.text || "{}";
+      const parsed = JSON.parse(jsonText);
+
+      return {
+        imageUrl: FALLBACK_IMAGE, // Usamos la imagen genérica de lujo
+        title: parsed.title || "Diseño Conceptual",
+        description: (parsed.description || "Una pieza exclusiva diseñada conceptualmente para ti.") + " (Nota: Imagen referencial por alta demanda del sistema de diseño)."
+      };
+
+    } catch (textError) {
+      console.error("Error fatal en ambos modelos:", textError);
+      throw new Error("El servicio de diseño está momentáneamente saturado. Por favor intenta en unos minutos.");
+    }
   }
 };

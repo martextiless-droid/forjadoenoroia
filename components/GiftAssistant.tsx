@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Sparkles, Send, Loader2, Download } from 'lucide-react';
+import { Sparkles, Send, Loader2, Download, AlertCircle } from 'lucide-react';
 import { getGiftSuggestion } from '../services/geminiService';
 import { GiftSuggestionResponse } from '../types';
 
@@ -8,21 +8,21 @@ export const GiftAssistant: React.FC = () => {
   const [description, setDescription] = useState('');
   const [suggestion, setSuggestion] = useState<GiftSuggestionResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleGenerate = async () => {
     if (!description.trim()) return;
 
     setLoading(true);
-    setError(false);
+    setErrorMessage(null);
     setSuggestion(null);
 
     try {
       const result = await getGiftSuggestion(description);
       setSuggestion(result);
-    } catch (err) {
-      setError(true);
-      console.error(err);
+    } catch (err: any) {
+      console.error("Error en componente:", err);
+      setErrorMessage(err.message || "Ocurrió un error inesperado. Intenta de nuevo.");
     } finally {
       setLoading(false);
     }
@@ -30,8 +30,7 @@ export const GiftAssistant: React.FC = () => {
 
   const sendToWhatsApp = () => {
     if (!suggestion) return;
-    // We can't attach the image directly via URL scheme, so we describe the intent
-    const text = `Hola Forjado en Oro. Su Inteligencia Artificial diseñó una pieza para mí llamada "${suggestion.title}". Me encantaría cotizar la fabricación de una joya con este estilo y características.`;
+    const text = `Hola Forjado en Oro. Su Inteligencia Artificial me sugirió el diseño "${suggestion.title}". Me gustaría cotizar una pieza con estas características: ${suggestion.description}`;
     window.open(`https://wa.me/3003214664?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -55,7 +54,7 @@ export const GiftAssistant: React.FC = () => {
             </h2>
             <p className="text-stone-300 text-lg mb-8 font-light leading-relaxed">
               Describe la personalidad, gustos o la historia de quien recibirá la joya. 
-              Nuestra IA generará una imagen fotorrealista única de la pieza perfecta.
+              Nuestra IA visualizará la pieza perfecta para esa persona especial.
             </p>
             
             <div className="bg-white/5 backdrop-blur-sm p-1 rounded-lg border border-white/10 focus-within:border-gold-500/50 transition-colors">
@@ -65,7 +64,10 @@ export const GiftAssistant: React.FC = () => {
                 placeholder="Ej: Es una mujer emprendedora, le gusta la naturaleza, el color verde esmeralda y el estilo minimalista pero elegante..."
                 className="w-full bg-transparent text-white p-4 min-h-[120px] outline-none placeholder:text-stone-500 resize-none"
               />
-              <div className="flex justify-end p-2">
+              <div className="flex justify-between items-center p-2">
+                 <span className="text-xs text-stone-500 px-2 hidden md:inline-block">
+                    Powered by Gemini 2.5 Flash
+                 </span>
                 <button
                   onClick={handleGenerate}
                   disabled={loading || !description.trim()}
@@ -79,8 +81,11 @@ export const GiftAssistant: React.FC = () => {
               </div>
             </div>
             
-            {error && (
-              <p className="text-red-400 mt-4 text-sm">Hubo un error al generar la imagen. Por favor intenta de nuevo.</p>
+            {errorMessage && (
+              <div className="mt-6 p-4 bg-red-500/10 border border-red-500/30 rounded flex items-start gap-3 animate-fade-in">
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <p className="text-red-200 text-sm">{errorMessage}</p>
+              </div>
             )}
           </div>
 
@@ -91,27 +96,32 @@ export const GiftAssistant: React.FC = () => {
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-900/80 z-20 backdrop-blur-sm">
                   <Loader2 className="w-10 h-10 text-gold-500 animate-spin mb-4" />
                   <p className="text-gold-100 text-sm tracking-widest animate-pulse">FORJANDO SU DISEÑO...</p>
+                  <p className="text-stone-500 text-xs mt-2">Esto puede tomar unos segundos</p>
                 </div>
               )}
               
               {suggestion ? (
                 <div className="relative w-full h-full flex flex-col animate-fade-in">
-                   <img 
-                    src={suggestion.imageUrl} 
-                    alt="Diseño generado por IA" 
-                    className="w-full h-auto max-h-[500px] object-contain mx-auto bg-gradient-to-b from-stone-800 to-stone-900"
-                  />
+                   <div className="relative flex-grow bg-stone-800 flex items-center justify-center overflow-hidden">
+                      <img 
+                        src={suggestion.imageUrl} 
+                        alt="Diseño generado por IA" 
+                        className="w-full h-full object-contain max-h-[400px]"
+                      />
+                   </div>
                   <div className="p-6 bg-white text-stone-900">
                     <div className="flex justify-between items-start mb-2">
                       <h3 className="text-xl font-serif font-bold text-gold-700">{suggestion.title}</h3>
-                      <a 
-                        href={suggestion.imageUrl} 
-                        download={`ForjadoEnOro-${Date.now()}.png`}
-                        className="text-stone-400 hover:text-gold-600 transition-colors"
-                        title="Descargar imagen"
-                      >
-                        <Download className="w-5 h-5" />
-                      </a>
+                      {!suggestion.imageUrl.startsWith('http') && (
+                        <a 
+                          href={suggestion.imageUrl} 
+                          download={`ForjadoEnOro-${Date.now()}.png`}
+                          className="text-stone-400 hover:text-gold-600 transition-colors"
+                          title="Descargar imagen"
+                        >
+                          <Download className="w-5 h-5" />
+                        </a>
+                      )}
                     </div>
                     <p className="text-sm text-stone-600 mb-6 line-clamp-3">{suggestion.description}</p>
                     <button
